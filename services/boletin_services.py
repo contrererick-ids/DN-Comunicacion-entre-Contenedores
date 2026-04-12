@@ -1,10 +1,32 @@
-# Definición de las funciones que manejan los boletines
+import json
+import aws.s3_services as s3_services
+import aws.sqs_services as sqs_services
+import uuid
 
-def create_boletin(boletin_id: int, boletin_message: str, boletin_file: bytes, email: str):
-    return {
-        "boletin_id": boletin_id,
-        "message": boletin_message,
-        "file_size": len(boletin_file),
-        "email": email,
-        "status": "Boletín creado exitosamente"
-    }
+boletin_counter = 0
+
+# Definición de las funciones que manejan los boletines
+def create_boletin_id():
+    boletin_id = str(str(uuid.uuid4()) + '-' + str(boletin_counter))
+    global boletin_counter
+    boletin_counter += 1
+    return boletin_id
+
+def create_boletin(boletin_file: bytes, boletin_message: str, email: str):
+    try:
+        boletin_id = create_boletin_id()
+        # Subimos el boletín a S3
+        lint_to_s3 = s3_services.upload_file_to_s3(boletin_file, f'boletines/{email}/{boletin_id}.pdf')
+
+        # Enviar un mensaje a SQS para notificar sobre el nuevo boletín
+        message_body = {
+            "email": email,
+            "message": boletin_message,
+            "s3_link": lint_to_s3
+        }
+        json_message_body = json.dumps(message_body)
+        sqs_services.send_message(json_message_body)
+
+        return {"status": "success", "message": "Boletín creado y notificación enviada."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
